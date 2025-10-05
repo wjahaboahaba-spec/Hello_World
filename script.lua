@@ -400,392 +400,609 @@ end
 
 
 
-
+local CaptureTab = Window:Tab({Title = "จับผู้ร้าย", Icon = "target"})
+    CaptureTab:Section({Title = "🎯 ผู้เล่นที่ติด WANTED"})
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
-local CaptureTab = Window:Tab({Title = "จับผู้ร้าย", Icon = "target"}) do
-    CaptureTab:Section({Title = "🎯 ผู้เล่นที่ติด WANTED"})
+-- สร้าง ScreenGui
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "CaptureGUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
-    local selectedPlayer = nil
-    local dropdownRef = nil
-    local captureToggleRef = nil
-    local captureTask = nil
+-- ฟังก์ชันสร้าง UI Elements
+local function CreateFrame(name, parent, size, position, bgColor)
+    local frame = Instance.new("Frame")
+    frame.Name = name
+    frame.Size = size
+    frame.Position = position
+    frame.BackgroundColor3 = bgColor or Color3.fromRGB(30, 30, 35)
+    frame.BorderSizePixel = 0
+    frame.Parent = parent
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = frame
+    
+    return frame
+end
 
-    -- ✅ ฟังก์ชันดึงรายชื่อผู้เล่นที่ติด WANTED
-    local function GetWantedPlayers()
-        local wantedPlayers = {}
+local function CreateButton(name, parent, text, size, position, callback)
+    local button = Instance.new("TextButton")
+    button.Name = name
+    button.Size = size
+    button.Position = position
+    button.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+    button.Text = text
+    button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    button.TextSize = 14
+    button.Font = Enum.Font.GothamBold
+    button.BorderSizePixel = 0
+    button.AutoButtonColor = false
+    button.Parent = parent
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = button
+    
+    button.MouseButton1Click:Connect(callback)
+    
+    -- Hover Effect
+    button.MouseEnter:Connect(function()
+        button.BackgroundColor3 = Color3.fromRGB(70, 70, 85)
+    end)
+    button.MouseLeave:Connect(function()
+        button.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+    end)
+    
+    return button
+end
 
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer then
-                local character = player.Character
-                if character then
-                    local head = character:FindFirstChild("Head")
-                    if head then
-                        local nameTag = head:FindFirstChild("NameTag")
-                        if nameTag then
-                            local wanted = nameTag:FindFirstChild("WANTED")
-                            if wanted and wanted:IsA("GuiObject") and wanted.Visible == true then
-                                table.insert(wantedPlayers, player.Name)
-                            end
+local function CreateLabel(name, parent, text, size, position, textSize)
+    local label = Instance.new("TextLabel")
+    label.Name = name
+    label.Size = size
+    label.Position = position
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.TextSize = textSize or 14
+    label.Font = Enum.Font.GothamBold
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = parent
+    return label
+end
+
+-- Main Frame (ขนาดกะทัดรัด)
+local MainFrame = CreateFrame("MainFrame", ScreenGui, UDim2.new(0, 300, 0, 400), UDim2.new(0.5, -150, 0.5, -200), Color3.fromRGB(25, 25, 30))
+
+-- Title Bar
+local TitleBar = CreateFrame("TitleBar", MainFrame, UDim2.new(1, 0, 0, 40), UDim2.new(0, 0, 0, 0), Color3.fromRGB(220, 50, 50))
+local TitleLabel = CreateLabel("Title", TitleBar, "🚨 จับผู้ร้าย", UDim2.new(1, -50, 1, 0), UDim2.new(0, 15, 0, 0), 16)
+TitleLabel.TextXAlignment = Enum.TextXAlignment.Center
+
+-- ปุ่มปิด GUI
+local CloseButton = CreateButton("Close", TitleBar, "X", UDim2.new(0, 35, 0, 35), UDim2.new(1, -38, 0, 2.5), function()
+    ScreenGui:Destroy()
+end)
+CloseButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+CloseButton.TextSize = 18
+
+-- Draggable
+local dragging, dragInput, dragStart, startPos
+
+local function updateDrag(input)
+    local delta = input.Position - dragStart
+    MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+
+TitleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+        
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) and dragging then
+        updateDrag(input)
+    end
+end)
+
+-- Content Area
+local ContentFrame = CreateFrame("Content", MainFrame, UDim2.new(1, -16, 1, -52), UDim2.new(0, 8, 0, 48), Color3.fromRGB(35, 35, 40))
+
+-- Variables
+local selectedPlayer = nil
+local captureToggle = false
+local captureConnection = nil
+local dropdownOpen = false
+
+local yPos = 10
+
+-- Section 1: Dropdown
+CreateLabel("Label1", ContentFrame, "🎯 เลือกผู้ร้าย", UDim2.new(1, -16, 0, 22), UDim2.new(0, 8, 0, yPos), 13)
+yPos = yPos + 26
+
+-- Dropdown Button
+local DropdownButton = CreateButton("DropdownBtn", ContentFrame, "▼ เลือกผู้เล่น", UDim2.new(1, -16, 0, 38), UDim2.new(0, 8, 0, yPos), function() end)
+DropdownButton.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+DropdownButton.TextSize = 14
+yPos = yPos + 42
+
+-- Dropdown List Container
+local DropdownList = CreateFrame("DropdownList", ContentFrame, UDim2.new(1, -16, 0, 0), UDim2.new(0, 8, 0, yPos), Color3.fromRGB(40, 40, 50))
+DropdownList.Visible = false
+DropdownList.ClipsDescendants = true
+DropdownList.ZIndex = 10
+
+local DropdownScroll = Instance.new("ScrollingFrame")
+DropdownScroll.Size = UDim2.new(1, 0, 1, 0)
+DropdownScroll.BackgroundTransparency = 1
+DropdownScroll.BorderSizePixel = 0
+DropdownScroll.ScrollBarThickness = 6
+DropdownScroll.Parent = DropdownList
+
+local ListLayout = Instance.new("UIListLayout")
+ListLayout.Padding = UDim.new(0, 2)
+ListLayout.Parent = DropdownScroll
+
+-- ฟังก์ชันดึงรายชื่อผู้เล่น WANTED
+local function GetWantedPlayers()
+    local wantedPlayers = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local character = player.Character
+            if character then
+                local head = character:FindFirstChild("Head")
+                if head then
+                    local nameTag = head:FindFirstChild("NameTag")
+                    if nameTag then
+                        local wanted = nameTag:FindFirstChild("WANTED")
+                        if wanted and wanted:IsA("GuiObject") and wanted.Visible == true then
+                            table.insert(wantedPlayers, player.Name)
                         end
                     end
                 end
             end
         end
-
-        return wantedPlayers
     end
+    return wantedPlayers
+end
 
-    -- ✅ Dropdown รายชื่อ
-    dropdownRef = CaptureTab:Dropdown({
-        Title = "เลือกผู้ร้าย (ยังไม่เสร็จ 100%)",
-        List = GetWantedPlayers(),
-        Value = nil,
-        Callback = function(selected)
-            selectedPlayer = selected
-            print("🎯 เลือกเป้าหมาย:", selected)
+-- ฟังก์ชัน Refresh Dropdown
+local function RefreshDropdown()
+    for _, child in ipairs(DropdownScroll:GetChildren()) do
+        if child:IsA("TextButton") then
+            child:Destroy()
         end
-    })
+    end
+    
+    local wantedList = GetWantedPlayers()
+    
+    for i, playerName in ipairs(wantedList) do
+        local itemBtn = CreateButton("Item"..i, DropdownScroll, playerName, UDim2.new(1, -8, 0, 32), UDim2.new(0, 0, 0, 0), function()
+            selectedPlayer = playerName
+            DropdownButton.Text = "✅ " .. playerName
+            dropdownOpen = false
+            DropdownList.Visible = false
+        end)
+        itemBtn.BackgroundColor3 = Color3.fromRGB(55, 55, 65)
+        itemBtn.TextSize = 13
+    end
+    
+    DropdownScroll.CanvasSize = UDim2.new(0, 0, 0, #wantedList * 34)
+    DropdownList.Size = UDim2.new(1, -16, 0, math.min(#wantedList * 34 + 4, 140))
+end
 
-    -- ✅ รีเฟรชอัตโนมัติทุก 1 วิ
-    task.spawn(function()
-        while true do
-            local wantedList = GetWantedPlayers()
+-- Toggle Dropdown
+DropdownButton.MouseButton1Click:Connect(function()
+    dropdownOpen = not dropdownOpen
+    DropdownList.Visible = dropdownOpen
+    if dropdownOpen then
+        RefreshDropdown()
+    end
+end)
 
-            -- ถ้าเป้าหมายที่เลือกหลุดจาก WANTED, ให้ยกเลิก toggle
-            if selectedPlayer and not table.find(wantedList, selectedPlayer) then
-                if captureToggleRef then
-                    captureToggleRef:SetValue(false)
-                end
-                selectedPlayer = nil
-            end
+-- ปุ่มรีเฟรช
+local RefreshBtn = CreateButton("RefreshBtn", ContentFrame, "🔄 รีเฟรชรายชื่อ", UDim2.new(1, -16, 0, 36), UDim2.new(0, 8, 0, yPos), function()
+    RefreshDropdown()
+    local notif = Instance.new("TextLabel")
+    notif.Size = UDim2.new(0, 180, 0, 50)
+    notif.Position = UDim2.new(0.5, -90, 0, -60)
+    notif.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+    notif.Text = "✅ รีเฟรชแล้ว!"
+    notif.TextColor3 = Color3.white
+    notif.Font = Enum.Font.GothamBold
+    notif.TextSize = 14
+    notif.Parent = MainFrame
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = notif
+    
+    task.wait(2)
+    notif:Destroy()
+end)
+yPos = yPos + 42
 
-            if dropdownRef then
-                dropdownRef:Refresh(wantedList)
-            end
-            task.wait(1)
+-- Section 2: Toggle จับผู้ร้าย
+CreateLabel("Label2", ContentFrame, "🚨 การจับผู้ร้าย", UDim2.new(1, -16, 0, 22), UDim2.new(0, 8, 0, yPos), 13)
+yPos = yPos + 26
+
+local CaptureToggleBtn = CreateButton("CaptureToggle", ContentFrame, "⭕ เริ่มจับผู้ร้าย", UDim2.new(1, -16, 0, 42), UDim2.new(0, 8, 0, yPos), function() end)
+CaptureToggleBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 90)
+CaptureToggleBtn.TextSize = 14
+yPos = yPos + 48
+
+CaptureToggleBtn.MouseButton1Click:Connect(function()
+    captureToggle = not captureToggle
+    
+    if captureToggle then
+        CaptureToggleBtn.Text = "🔴 หยุดจับ"
+        CaptureToggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+        
+        if not selectedPlayer then
+            warn("⚠️ ยังไม่ได้เลือกผู้เล่น")
+            captureToggle = false
+            CaptureToggleBtn.Text = "⭕ เริ่มจับผู้ร้าย"
+            CaptureToggleBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 90)
+            return
         end
-    end)
-
-    -- ✅ ปุ่ม Refresh รายชื่อด้วยตนเอง
-    CaptureTab:Button({
-        Title = "🔁 รีเฟรชรายชื่อ",
-        Desc = "อัปเดตรายชื่อผู้เล่นที่ติด WANTED ทันที",
-        Callback = function()
-            local wantedList = GetWantedPlayers()
-            if dropdownRef then
-                dropdownRef:Refresh(wantedList)
-                Window:Notify({
-                    Title = "🔄 รีเฟรชแล้ว",
-                    Desc = "อัปเดตรายชื่อผู้ร้ายล่าสุดแล้ว!",
-                    Time = 2
-                })
-            end
+        
+        local targetPlayer = Players:FindFirstChild(selectedPlayer)
+        if not targetPlayer or not targetPlayer.Character then
+            warn("❌ ไม่พบผู้เล่น")
+            captureToggle = false
+            CaptureToggleBtn.Text = "⭕ เริ่มจับผู้ร้าย"
+            CaptureToggleBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 90)
+            return
         end
-    })
-
-    -- ✅ Toggle จับผู้ร้ายแบบลอย + spam
-    captureToggleRef = CaptureTab:Toggle({
-        Title = "🚨 จับผู้ร้ายแบบรัว ๆ",
-        Desc = "เปิดเพื่อจับเป้าหมายแบบลอยตาม + รัวคำสั่งจับ",
-        Value = false,
-        Callback = function(state)
-            if not state then
-                if captureTask then
-                    task.cancel(captureTask)
-                    captureTask = nil
-                    Window:Notify({
-                        Title = "⛔️ หยุดจับแล้ว",
-                        Desc = "ยกเลิกการตามจับ",
-                        Time = 2
-                    })
+        
+        local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local cuffs = LocalPlayer:FindFirstChild("Backpack") and LocalPlayer.Backpack:FindFirstChild("Handcuffs")
+        
+        if not (hrp and cuffs and cuffs:FindFirstChild("RemoteFunction")) then
+            warn("❌ ไม่พบ Handcuffs")
+            captureToggle = false
+            CaptureToggleBtn.Text = "⭕ เริ่มจับผู้ร้าย"
+            CaptureToggleBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 90)
+            return
+        end
+        
+        local carrying = cuffs:WaitForChild("Carrying")
+        
+        captureConnection = RunService.RenderStepped:Connect(function()
+            if not captureToggle then return end
+            
+            local target = Players:FindFirstChild(selectedPlayer)
+            if not target or not target.Character then
+                captureToggle = false
+                CaptureToggleBtn.Text = "⭕ เริ่มจับผู้ร้าย"
+                CaptureToggleBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 90)
+                if captureConnection then
+                    captureConnection:Disconnect()
                 end
                 return
             end
-
-            if not selectedPlayer then
-                Window:Notify({
-                    Title = "⚠️ ยังไม่ได้เลือกผู้เล่น",
-                    Desc = "โปรดเลือกผู้ร้ายจาก Dropdown ก่อน",
-                    Time = 3
-                })
-                if captureToggleRef then
-                    captureToggleRef:SetValue(false)
-                end
-                return
-            end
-
-            local targetPlayer = Players:FindFirstChild(selectedPlayer)
-            if not targetPlayer or not targetPlayer.Character then
-                Window:Notify({
-                    Title = "❌ ไม่พบผู้เล่น",
-                    Desc = selectedPlayer .. " อาจออกเกมไปแล้ว",
-                    Time = 3
-                })
-                if captureToggleRef then
-                    captureToggleRef:SetValue(false)
-                end
-                return
-            end
-
-            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-            local targetHrp = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if not (hrp and targetHrp) then return end
-
-            local cuffs = LocalPlayer:FindFirstChild("Backpack"):FindFirstChild("Handcuffs")
-            if not (cuffs and cuffs:FindFirstChild("RemoteFunction")) then
-                warn("❌ ไม่พบ Handcuffs หรือ RemoteFunction")
-                if captureToggleRef then
-                    captureToggleRef:SetValue(false)
-                end
-                return
-            end
-
-            captureTask = task.spawn(function()
-                local carrying = cuffs:WaitForChild("Carrying")
-
-                while carrying.Value ~= selectedPlayer do
-                    -- ลอยตามหัวเป้าหมายแบบติด ๆ เหนือพื้น 5 studs
-                    if targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                        local targetPos = targetPlayer.Character.HumanoidRootPart.Position
-                        hrp.Velocity = Vector3.zero
-                        hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 5, 0))
-                    end
-
-                    -- spam จับ
-                    local args = {Players:WaitForChild(selectedPlayer)}
+            
+            local targetHrp = target.Character:FindFirstChild("HumanoidRootPart")
+            local myHrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            
+            if targetHrp and myHrp then
+                local targetCFrame = targetHrp.CFrame
+                local offset = targetCFrame.LookVector * -2 + Vector3.new(0, 0, 0)
+                
+                myHrp.CFrame = CFrame.new(targetHrp.Position + offset)
+                myHrp.Velocity = Vector3.zero
+                
+                if carrying.Value ~= selectedPlayer then
+                    local args = {target}
                     cuffs.RemoteFunction:InvokeServer(unpack(args))
-
-                    task.wait(0.15)
+                else
+                    print("✅ จับสำเร็จ:", selectedPlayer)
+                    captureToggle = false
+                    CaptureToggleBtn.Text = "⭕ เริ่มจับผู้ร้าย"
+                    CaptureToggleBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 90)
+                    if captureConnection then
+                        captureConnection:Disconnect()
+                    end
                 end
-
-                Window:Notify({
-                    Title = "✅ จับสำเร็จ!",
-                    Desc = selectedPlayer .. " ถูกจับแล้ว!",
-                    Time = 3
-                })
-                print("✅ จับสำเร็จ:", selectedPlayer)
-
-                if captureToggleRef then
-                    captureToggleRef:SetValue(false)
-                end
-                captureTask = nil
-            end)
+            end
+        end)
+    else
+        CaptureToggleBtn.Text = "⭕ เริ่มจับผู้ร้าย"
+        CaptureToggleBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 90)
+        if captureConnection then
+            captureConnection:Disconnect()
+            captureConnection = nil
         end
-    })
+    end
+end)
+
+-- Section 3: ฟีเจอร์เพิ่มเติม
+CreateLabel("Label3", ContentFrame, "⚡ ฟีเจอร์เสริม", UDim2.new(1, -16, 0, 22), UDim2.new(0, 8, 0, yPos), 13)
+yPos = yPos + 26
+
+CreateButton("PoliceBtn", ContentFrame, "👮 สมัครตำรวจ", UDim2.new(1, -16, 0, 36), UDim2.new(0, 8, 0, yPos), function()
+    LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(770, 14, -22)
+end)
+yPos = yPos + 40
+
+CreateButton("JailBtn", ContentFrame, "🏢 ลอยไปเข้าคุก", UDim2.new(1, -16, 0, 36), UDim2.new(0, 8, 0, yPos), function()
+    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local hrp = char:WaitForChild("HumanoidRootPart")
+    local targetCFrame = CFrame.new(853, 14, -19)
+    local tweenInfo = TweenInfo.new(3, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+    local tween = TweenService:Create(hrp, tweenInfo, {CFrame = targetCFrame})
+    tween:Play()
+end)
+
+-- Auto-refresh
+task.spawn(function()
+    while ScreenGui and ScreenGui.Parent do
+        local wantedList = GetWantedPlayers()
+        if selectedPlayer and not table.find(wantedList, selectedPlayer) then
+            selectedPlayer = nil
+            DropdownButton.Text = "▼ เลือกผู้เล่น"
+            if captureToggle then
+                captureToggle = false
+                CaptureToggleBtn.Text = "⭕ เริ่มจับผู้ร้าย"
+                CaptureToggleBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 90)
+                if captureConnection then
+                    captureConnection:Disconnect()
+                    captureConnection = nil
+                end
+            end
+        end
+        task.wait(2)
+    end
+end)
+
+print("✅ GUI โหลดเสร็จแล้ว!")
+
+-- ===============================================
+-- ฟังก์ชันสำหรับ Toggle GUI (เพิ่มใหม่)
+-- ===============================================
+-- ใช้ฟังก์ชันนี้กับ UI Library ของคุณ
+local function ToggleGUI(value)
+    MainFrame.Visible = value
+    print("GUI Visibility:", value)
 end
 
 
-
-    CaptureTab:Button({
-        Title = "สมัครตำรวจ (Police)",
-        Desc = "วาร์ปไปโรงพัก",
-        Callback = function()
-            game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(770, 14, -22)
-        end
-    })
-
-
-
-local TweenService = game:GetService("TweenService")
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-
--- ปุ่มวาร์ปแบบลอยไปตำแหน่ง
-CaptureTab:Button({
-    Title = "ลอยไปเข้าคุก",
-    Desc = "",
-    Callback = function()
-        local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-        local hrp = char:WaitForChild("HumanoidRootPart")
-
-        -- จุดเป้าหมาย
-        local targetCFrame = CFrame.new(853, 14, -19)
-
-        -- ตั้ง Tween
-        local tweenInfo = TweenInfo.new(
-            3, -- ระยะเวลา 3 วินาที (เปลี่ยนได้)
-            Enum.EasingStyle.Linear, -- เคลื่อนเส้นตรง
-            Enum.EasingDirection.Out
-        )
-
-        local tween = TweenService:Create(hrp, tweenInfo, {CFrame = targetCFrame})
-        tween:Play()
-
-        tween.Completed:Connect(function()
-            Window:Notify({
-                Title = "✅ สำเร็จ!",
-                Desc = "คุณถูกลอยไปยังตำแหน่งที่กำหนดแล้ว",
-                Time = 3
-            })
-        end)
+CaptureTab:Toggle({
+    Title = "เปิด GUI จับคนร้าย",
+    Desc = "สำหรับ ตำรวจ",
+    Value = false,
+    Callback = function(v)
+        ToggleGUI(v)
     end
 })
 
+
+Window:Line()
 
 
 
 -----------------------------------------------------
 -- 🧺 งานขาว (Placeholder)
 -----------------------------------------------------
-local White = Window:Tab({ Title = 'หาเงิน (อาชีพต่างๆ)', Icon = 'tag' })
-    White:Section({ Title = 'ยังไม่มีฟังก์ชัน' })
+local White = Window:Tab({ Title = 'ออโต้ปล่อยฟามเงิน', Icon = 'tag' })
+    White:Section({ Title = 'ปล่ยฟามเงินรัวๆ' })
 
 
 do
 
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local root = Character:WaitForChild("HumanoidRootPart")
-local VirtualInputManager = game:GetService("VirtualInputManager")
-local ProximityPromptService = game:GetService("ProximityPromptService")
-local TweenService = game:GetService("TweenService")
+local Players = game:GetService('Players')
+local ReplicatedStorage = game:GetService('ReplicatedStorage')
+local ProximityPromptService = game:GetService('ProximityPromptService')
+local player = Players.LocalPlayer
 
-local running = false
+-- สถานะเปิด–ปิดระบบฟาร์ม
+local farmingEnabled = false
 
--- ✅ ลบ cooldown เวลาเก็บ/กดปุ่ม E
-local function Nocooldown()
-	ProximityPromptService.PromptButtonHoldBegan:Connect(function(prompt)
-		prompt.HoldDuration = 0
-	end)
+-- 🌀 ฟังก์ชันเทเลพอร์ต
+local function tpTo(pos)
+    if player.Character and player.Character:FindFirstChild('HumanoidRootPart') then
+        player.Character.HumanoidRootPart.CFrame = CFrame.new(pos)
+    end
 end
 
--- ✅ กดปุ่ม E จำลอง
-local function pressE(times)
-	times = times or 1
-	for i = 1, times do
-		VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-		task.wait(0.05)
-		VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-		task.wait(0.1)
-	end
+-- ⚙️ ฟังก์ชัน bypass cooldown
+local function bypasscooldown()
+    ProximityPromptService.PromptButtonHoldBegan:Connect(function(prompt)
+        prompt.HoldDuration = 0
+    end)
 end
 
--- ✅ ฟังก์ชันหา Customer Part ที่แม่นยำ
-local function FindCustomerTarget()
-	local folder = workspace:FindFirstChild("Customer_" .. LocalPlayer.Name)
-	if not folder then
-		return nil
-	end
+-- 🧺 ฟังก์ชันถือ Basket
+local function equipBasket()
+    local backpack = player:WaitForChild('Backpack')
+    local char = player.Character or player.CharacterAdded:Wait()
 
-	-- หาส่วนที่เป็น BasePart ที่ใกล้สุด
-	local closestPart, closestDist = nil, math.huge
-	for _, obj in pairs(folder:GetDescendants()) do
-		if obj:IsA("BasePart") then
-			local dist = (root.Position - obj.Position).Magnitude
-			if dist < closestDist then
-				closestDist = dist
-				closestPart = obj
-			end
-		end
-	end
+    if not backpack:FindFirstChild('Basket') and not char:FindFirstChild('Basket') then
+        local args = { 'Use', 'Basket' }
+        ReplicatedStorage:WaitForChild('Events'):WaitForChild('InventoryEvent'):FireServer(unpack(args))
+        task.wait(1)
+    end
 
-	return closestPart
+    local tool = backpack:FindFirstChild('Basket')
+    if tool then
+        char:WaitForChild('Humanoid'):EquipTool(tool)
+    end
 end
 
--- ✅ ฟังก์ชัน Tween วาร์ปลอยไปหาเป้าหมาย
-local function TweenToTarget(targetCFrame)
-	if not root then return end
-	local tweenInfo = TweenInfo.new(
-		1.5, -- เวลาเคลื่อน
-		Enum.EasingStyle.Quad,
-		Enum.EasingDirection.Out
-	)
-	local tween = TweenService:Create(root, tweenInfo, {CFrame = targetCFrame})
-	tween:Play()
-	tween.Completed:Wait()
+-- 🔍 หา ProximityPrompt ภายในโมเดล
+local function findPrompt(model)
+    for _, obj in ipairs(model:GetDescendants()) do
+        if obj:IsA('ProximityPrompt') then
+            return obj
+        end
+    end
+    return nil
 end
 
--- ✅ ฟังก์ชันวาร์ป ส่งของ
-local function WarpAndDeliver()
-	Nocooldown()
+-- 🎒 เช็คว่า Backpack เต็มไหม (100/100)
+local function isBackpackFull()
+    local gui = player:FindFirstChild('PlayerGui')
+    if not gui then return false end
 
-	local character = LocalPlayer.Character
-	if not character then return end
+    local menu = gui:FindFirstChild('Menu')
+    if not menu then return false end
 
-	local hasBox = character:FindFirstChild("Box") ~= nil
+    local backpackFrame = menu:FindFirstChild('BackpackFrame')
+    if not backpackFrame then return false end
 
-	if not hasBox then
-		-- 🔹 วาร์ปไปจุดเก็บกล่อง
-		root.CFrame = CFrame.new(33, 7, -186)
-		task.wait(0.3)
+    local top1 = backpackFrame:FindFirstChild('TOP1')
+    if not top1 then return false end
 
-		-- 🔹 กด E เพื่อรับกล่อง
-		pressE(1)
+    local allItem = top1:FindFirstChild('AllItem')
+    if not allItem or not allItem:IsA('TextLabel') then return false end
 
-		-- 🔹 หยิบจาก Backpack
-		local backpack = LocalPlayer:FindFirstChild("Backpack")
-		local box = backpack and backpack:FindFirstChild("Box")
-		if box and box:IsA("Tool") then
-			box.Parent = character
-			print("📦 หยิบกล่อง Box ขึ้นมา")
-		else
-			warn("❌ ไม่พบ Box ใน Backpack")
-			return
-		end
-
-		task.wait(1.5)
-	else
-		print("📦 พบ Box ในตัวแล้ว → ข้ามขั้นตอนรับ")
-	end
-
-	task.wait(3.5)
-
-	-- 🔹 หา Customer Part
-	local targetPart = FindCustomerTarget()
-	if targetPart then
-		-- 🔹 Tween ลอยไปหาเป้าหมาย
-		local targetCFrame = targetPart.CFrame + Vector3.new(0, 3, 0)
-		TweenToTarget(targetCFrame)
-		print("✅ ลอยไปที่ Customer_" .. LocalPlayer.Name)
-
-		-- 🔹 กด E จำลองเพื่อส่งของ
-		pressE(4)
-	else
-		warn("❌ ไม่พบตำแหน่งลูกค้า Customer_" .. LocalPlayer.Name)
-	end
+    local text = allItem.Text
+    local current, max = string.match(text, '(%d+)/(%d+)')
+    if current and max then
+        local num = tonumber(current)
+        local limit = tonumber(max)
+        if num and limit and num >= limit then
+            return true
+        end
+    end
+    return false
 end
 
--- ✅ เริ่มลูปอัตโนมัติ
-local function StartAutoDeliverLoop()
-	Nocooldown()
-	task.spawn(function()
-		while running do
-			pcall(WarpAndDeliver)
-			task.wait(2)
-		end
-	end)
+-- 🍇 ฟังก์ชันวาร์ปไปเก็บองุ่น
+local function farmGrapes()
+    local grapeFolder = workspace:WaitForChild('Plants'):WaitForChild('Grape')
+
+    while farmingEnabled do
+        if isBackpackFull() then
+            warn('🎒 Backpack เต็มแล้ว! หยุดฟาร์ม.')
+            break
+        end
+
+        for _, grape in ipairs(grapeFolder:GetChildren()) do
+            if not farmingEnabled then return end
+            if isBackpackFull() then
+                warn('🎒 Backpack เต็มแล้ว! หยุดฟาร์ม.')
+                return
+            end
+
+            if grape:IsA('Model') then
+                local part = grape:FindFirstChildWhichIsA('BasePart')
+                if part then
+                    tpTo(part.Position + Vector3.new(0, 3, 0))
+                    task.wait(0.2)
+
+                    local prompt = findPrompt(grape)
+                    if prompt then
+                        pcall(function()
+                            fireproximityprompt(prompt)
+                        end)
+                    end
+
+                    task.wait(1)
+                end
+            end
+        end
+    end
 end
 
--- ✅ ปุ่ม Toggle UI
+-- 🧃 คราฟองุ่นเป็นน้ำองุ่น (ทีละ 1 แบบรัว ๆ)
+local function craftGrapes()
+    local inv = player:WaitForChild('Inventory')
+    local grape = inv:FindFirstChild('Grape')
+    if not grape then return end
+
+    tpTo(Vector3.new(-3440, 37, -153))
+    task.wait(1)
+
+    while grape and grape.Value > 0 and farmingEnabled do
+        local args = { 'Craft_Farm', 'Grape', 1 } -- คราฟทีละ 1
+        ReplicatedStorage:WaitForChild('Events'):WaitForChild('CraftEvent'):FireServer(unpack(args))
+        task.wait(0.25) -- คราฟรัว ๆ เร็วพอดี
+    end
+end
+
+-- 💰 ขายน้ำองุ่นทั้งหมดในครั้งเดียว
+local function sellJuice()
+    local inv = player:WaitForChild('Inventory')
+    local juice = inv:FindFirstChild('Grape Juice')
+    if not juice then
+        warn('❌ ไม่มีน้ำองุ่นในคลัง')
+        return
+    end
+
+    local amount = juice.Value
+    if amount <= 0 then
+        warn('⚠️ ไม่มีน้ำองุ่นให้ขาย')
+        return
+    end
+
+    tpTo(Vector3.new(372, 7, 189))
+    task.wait(1)
+
+    local args = { 'Grape Juice', amount }
+    ReplicatedStorage:WaitForChild('Events'):WaitForChild('SellEvent'):FireServer(unpack(args))
+    warn('✅ ขายน้ำองุ่นทั้งหมดจำนวน: ' .. amount .. ' ขวดแล้ว!')
+end
+
+-- 🚀 ฟังก์ชันหลักของระบบฟาร์ม (รันต่อเนื่อง)
+local function startFarming()
+    task.spawn(function()
+        while farmingEnabled do
+            tpTo(Vector3.new(-3554, 36, -183))
+            task.wait(1)
+
+            equipBasket()
+            bypasscooldown()
+
+            farmGrapes()
+            if not farmingEnabled then break end
+
+            craftGrapes()
+            if not farmingEnabled then break end
+
+            sellJuice()
+            if not farmingEnabled then break end
+
+            task.wait(2)
+        end
+    end)
+end
+
+-- 🧠 ปุ่ม Toggle เปิด/ปิดระบบฟาร์ม
 White:Toggle({
-	Title = "📦 ออโต้ส่งจดหมาย",
-	Desc = "",
-	Value = false,
-	Callback = function(v)
-		running = v
-		print("🔁 Auto Deliver:", running and "เริ่มทำงาน" or "หยุดแล้ว")
-		if running then
-			StartAutoDeliverLoop()
-		end
-	end
+    Title = "🍇 ฟามองุ่นพร้อมขายเงิน",
+    Desc = "",
+    Value = false,
+    Callback = function(v)
+        farmingEnabled = v
+        if v then
+            print("✅ เริ่มฟาร์มองุ่นอัตโนมัติ")
+            startFarming()
+        else
+            print("🛑 ปิดระบบฟาร์มองุ่นแล้ว")
+        end
+    end
 })
 
 
 
--- ✅ ปุ่ม Toggle UI
-White:Toggle({
-	Title = "ตกปลา (กำลังทำอยู่)",
-	Desc = "",
-	Value = false,
-	Callback = function(v)
-	
-	end
-})
 
 
 
@@ -795,7 +1012,7 @@ Window:Line()
 
 
 
-local FoodsAll = Window:Tab({Title = "ฟามหาเงิน", Icon = "tag"}) do
+local FoodsAll = Window:Tab({Title = "ฟามหาเงินทั่วไป", Icon = "tag"}) do
     FoodsAll:Section({Title = "ออโต้ฟาม สตอรเบอรรี่"})
 
 
@@ -1822,8 +2039,6 @@ end
 
 Window:Line()
 
-
-
 local Aimbot = Window:Tab({Title = "ล็อคเป้า", Icon = "user"}) do
     Aimbot:Section({Title = "โหมดล็อคหัวออโต้"})
     
@@ -1834,8 +2049,8 @@ local Aimbot = Window:Tab({Title = "ล็อคเป้า", Icon = "user"}) d
     
     -- ปุ่ม Toggle เปิดปิด Aimbot
     Aimbot:Toggle({
-        Title = "เปิด ล็อคหัว (ออโต้)",
-        Desc = "Toggle to enable or disable aimbot",
+        Title = "เปิด ล็อคหัว ใช้ได้กับ Glock 17",
+        Desc = "",
         Value = false,
         Callback = function(v)
             AimbotSettings.Enabled = v
@@ -2030,7 +2245,6 @@ local Aimbot = Window:Tab({Title = "ล็อคเป้า", Icon = "user"}) d
     print("Use the toggle to enable/disable aimbot")
 end
 Window:Line()
-
 
 
 
