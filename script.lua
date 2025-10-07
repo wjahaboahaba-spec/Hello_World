@@ -1868,7 +1868,9 @@ local Player = Window:Tab({Title = "Player", Icon = "user"}) do
     local FlyEnabled = false
     local CurrentSpeed = 25
     local CurrentJumpPower = 50
+local Hunger = LocalPlayer:WaitForChild("Hunger")
 
+local InventoryEvent = ReplicatedStorage:WaitForChild("Events"):WaitForChild("InventoryEvent")
     local uis = game:GetService("UserInputService")
     local rs = game:GetService("RunService")
     local player = game:GetService("Players").LocalPlayer
@@ -1966,30 +1968,6 @@ local Player = Window:Tab({Title = "Player", Icon = "user"}) do
     })
 
     Player:Toggle({
-        Title = "กระโดดสูง",
-        Value = false,
-        Callback = function(v)
-            JumpEnabled = v
-            if v then applyJumpPower()
-            else
-                local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-                if humanoid then humanoid.JumpPower = 50 end
-            end
-        end
-    })
-
-    Player:Slider({
-        Title = "ปรับกระโดด",
-        Min = 50,
-        Max = 200,
-        Value = 50,
-        Callback = function(val)
-            CurrentJumpPower = val
-            if JumpEnabled then applyJumpPower() end
-        end
-    })
-
-    Player:Toggle({
         Title = "เดินทะลุ",
         Value = false,
         Callback = function(v)
@@ -2008,31 +1986,69 @@ local Player = Window:Tab({Title = "Player", Icon = "user"}) do
         end
     })
 
-  
-    Player:Button({
-        Title = "รีเซ็ทตัว",
-        Callback = function()
-            SpeedEnabled = false
-            JumpEnabled = false
-            NoclipEnabled = false
-            InfiniteJumpEnabled = false
-            FlyEnabled = false
 
-            if flyConnection then flyConnection:Disconnect() end
-            if jumpConnection then jumpConnection:Disconnect() end
 
-            local character = player.Character
-            if character then
-                local humanoid = character:FindFirstChildOfClass("Humanoid")
-                if humanoid then
-                    humanoid.WalkSpeed = 16
-                    humanoid.JumpPower = 50
+-- ⚙️ ค่าเริ่มต้น
+local SelectedFood = "Hamburger"
+local SelectedDrink = "Cola"
+local autoEating = false
+
+-- 🍔 Dropdown อาหาร
+Player:Dropdown({
+    Title = "เลือกอาหาร",
+    List = {"Hamburger", "Hot dog", "Donut", "Icecream"},
+    Value = SelectedFood,
+    Callback = function(value)
+        SelectedFood = value
+        print("🍔 เลือกอาหาร:", SelectedFood)
+    end
+})
+
+-- 🥤 Dropdown เครื่องดื่ม
+Player:Dropdown({
+    Title = "เลือกเครื่องดื่ม",
+    List = {"Cola", "Water", "coffee", "Smoothie"},
+    Value = SelectedDrink,
+    Callback = function(value)
+        SelectedDrink = value
+        print("🥤 เลือกเครื่องดื่ม:", SelectedDrink)
+    end
+})
+
+-- 🔘 Toggle สำหรับออโต้กิน
+Player:Toggle({
+    Title = "กดเปิด ออโต้กิน",
+    Desc = "จะกินเมื่อ Hunger < 50",
+    Value = autoEating,
+    Callback = function(isEnabled)
+        autoEating = isEnabled
+        print("🪄 Toggle changed:", isEnabled and "เริ่มทำงาน" or "หยุดแล้ว")
+
+        if isEnabled then
+            task.spawn(function()
+                while autoEating do
+                    if Hunger.Value < 50 then
+                        -- ✅ กินอาหาร
+                        InventoryEvent:FireServer("Use", SelectedFood)
+                        print("🍽️ กิน:", SelectedFood)
+                        task.wait(4)
+
+                        -- ✅ ดื่มน้ำ
+                        InventoryEvent:FireServer("Use", SelectedDrink)
+                        print("🥤 ดื่ม:", SelectedDrink)
+                        task.wait(4)
+                    else
+                        print("🛑 หยุดกินเพราะ Hunger เต็ม (100)")
+                        repeat
+                            task.wait(1)
+                        until Hunger.Value < 50 or not autoEating
+                    end
                 end
-            end
-
-            -- หมายเหตุ: คุณต้องจัดการรีเฟรชสถานะของ Toggle ด้วยตัวเองที่ UI Layer
+            end)
         end
-    })
+    end
+})
+
 end
 
 
@@ -2041,15 +2057,15 @@ Window:Line()
 
 local Aimbot = Window:Tab({Title = "ล็อคเป้า", Icon = "user"}) do
     Aimbot:Section({Title = "โหมดล็อคหัวออโต้"})
-    
+
     local AimbotSettings = {
         Enabled = false,
         Range = 50
     }
-    
-    -- ปุ่ม Toggle เปิดปิด Aimbot
+
+    -- 🔘 Toggle เปิด/ปิด Aimbot
     Aimbot:Toggle({
-        Title = "เปิด ล็อคหัว ใช้ได้กับ Glock 17",
+        Title = "เปิด ล็อคหัว ใช้ได้กับหลายปืน",
         Desc = "",
         Value = false,
         Callback = function(v)
@@ -2061,8 +2077,76 @@ local Aimbot = Window:Tab({Title = "ล็อคเป้า", Icon = "user"}) d
             end
         end
     })
-    
-    -- ปุ่ม Slider กำหนดระยะ
+
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- รายชื่อปืนที่รองรับ
+local POSSIBLE_GUN_NAMES = {
+    "AK", "AUG", "Barret", "Desert Eagle", "Glock", "M4", "MP5",
+    "Police Glock", "Police MP5", "Scar", "Shotgun", "Sniper Rifle",
+    "Spas Shotgun", "Taser", "Uzi"
+}
+
+-- แปลงเป็น Set สำหรับเช็คชื่อไวขึ้น
+local GunNameSet = {}
+for _, name in ipairs(POSSIBLE_GUN_NAMES) do
+    GunNameSet[name] = true
+end
+
+-- ตัวแปรควบคุมเปิด/ปิดฟังก์ชัน
+local isFiring = false
+
+-- ฟังก์ชัน reload เมื่อกระสุนหมด
+local function startFiring()
+    task.spawn(function()
+        while isFiring do
+            local char = LocalPlayer.Character
+            if char then
+                for _, tool in ipairs(char:GetChildren()) do
+                    if GunNameSet[tool.Name] then
+                        -- ใช้ชื่อผู้เล่นแทน MetanteiRieru
+                        local gunInWorld = workspace:FindFirstChild(LocalPlayer.Name)
+                        if gunInWorld then
+                            local gun = gunInWorld:FindFirstChild(tool.Name)
+                            if gun then
+                                local config = gun:FindFirstChild("Configuration")
+                                if config then
+                                    local currentAmmo = config:FindFirstChild("CurrentAmmo")
+                                    if currentAmmo and currentAmmo.Value <= 0 then
+                                        local reloadEvent = tool:FindFirstChild("ReloadEvent")
+                                        if reloadEvent then
+                                            reloadEvent:FireServer()
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            task.wait(1) -- ตรวจสอบทุก 1 วินาที
+        end
+    end)
+end
+
+-- Toggle UI callback
+Aimbot:Toggle({
+    Title = "รีโหลดออโต้",
+    Desc = "จะรีโหลดเฉพาะตอนกระสุนหมด",
+    Value = false,
+    Callback = function(v)
+        isFiring = v
+        if v then
+            startFiring()
+        end
+    end
+})
+
+
+
+    -- 🎚️ ปรับระยะล็อคหัว
     Aimbot:Slider({
         Title = "ปรับระยะล็อคหัว",
         Min = 10,
@@ -2074,141 +2158,157 @@ local Aimbot = Window:Tab({Title = "ล็อคเป้า", Icon = "user"}) d
             print("Aimbot Range set to: " .. val)
         end
     })
-    
-    -- ปุ่มทดสอบยิง
-    Aimbot:Button({
-        Title = "Test Shoot",
-        Callback = function()
-            -- ฟังก์ชันทดสอบยิง
-            local function testShoot()
-                print("Testing shoot function...")
-                local target = findNearestTarget()
-                if target then
-                    shootAtTarget(target)
-                else
-                    print("No target available for test")
-                end
+
+
+
+
+
+    ----------------------------------------------------------------
+    -- 📦 ปืนที่รองรับ (จากรูปที่คุณแนบมา)
+    ----------------------------------------------------------------
+    local POSSIBLE_GUN_NAMES = {
+        "AK", "AUG", "Barret", "Desert Eagle", "Glock", "M4", "MP5",
+        "Police Glock", "Police MP5", "Scar", "Shotgun", "Sniper Rifle",
+        "Spas Shotgun", "Taser", "Uzi"
+    }
+
+    local function nameMatchesAny(name, list)
+        if not name or name == "" then return false end
+        local lower = string.lower(name)
+        for _, v in ipairs(list) do
+            if string.find(lower, string.lower(v), 1, true) then
+                return true
             end
-            testShoot()
         end
-    })
-    
-    -- ฟังก์ชันคำนวณระยะทาง
-    local function getDistance(position1, position2)
-        return (position1 - position2).Magnitude
+        return false
     end
 
-    -- ฟังก์ชันหาเป้าหมายที่ใกล้ที่สุด
+    local function getEquippedWeapon(character)
+        if not character then return nil end
+
+        -- 1. Match จากชื่อปืน
+        for _, child in ipairs(character:GetChildren()) do
+            if nameMatchesAny(child.Name, POSSIBLE_GUN_NAMES) then
+                local se = child:FindFirstChild("ShootEvent", true)
+                if se then return child, se end
+            end
+        end
+
+        -- 2. Fallback: หา RemoteEvent ชื่อ ShootEvent
+        for _, descendant in ipairs(character:GetDescendants()) do
+            if descendant:IsA("RemoteEvent") and descendant.Name == "ShootEvent" then
+                return descendant.Parent, descendant
+            end
+        end
+
+        return nil, nil
+    end
+
+    ----------------------------------------------------------------
+    -- 🔫 ยิงใส่เป้าหมาย
+    ----------------------------------------------------------------
+    local function shootAtTarget(targetPlayer)
+    local Players = game:GetService("Players")
+    local localPlayer = Players.LocalPlayer
+
+    if not targetPlayer or not targetPlayer.Character then 
+        print("❌ No target player found")
+        return false 
+    end
+
+    local head = targetPlayer.Character:FindFirstChild("Head")
+    if not head then 
+        print("❌ No head found on target")
+        return false 
+    end
+
+    local character = localPlayer.Character
+    if not character then 
+        print("❌ No local character")
+        return false 
+    end
+
+    local weapon, shootEvent = getEquippedWeapon(character)
+    if not weapon then
+        print("❌ No weapon equipped")
+        return false
+    end
+
+    -- ตรวจสอบว่ามี ShootEvent และใช้ได้
+    if shootEvent and shootEvent:IsA("RemoteEvent") then
+        -- 🔁 ยิงไปยังตำแหน่งหัว (สดทุกเฟรม) = ยิงแบบติดตาม
+        local targetPosition = head.Position
+
+        -- ✅ ยิงโดยใช้พิกัดปัจจุบันของ Head → ติดตามตัวเสมอ
+        shootEvent:FireServer(targetPosition)
+
+        print("🎯 Locked shot at: " .. targetPlayer.Name .. " (live head position)")
+        return true
+    else
+        print("⚠️ ShootEvent missing or invalid for: " .. weapon.Name)
+    end
+
+    return false
+end
+
+    ----------------------------------------------------------------
+    -- 🎯 หาผู้เล่นที่ใกล้ที่สุดในระยะ
+    ----------------------------------------------------------------
+    local function getDistance(pos1, pos2)
+        return (pos1 - pos2).Magnitude
+    end
+
     local function findNearestTarget()
         local Players = game:GetService("Players")
         local localPlayer = Players.LocalPlayer
-        
-        if not localPlayer.Character then 
-            print("No local character found")
-            return nil 
-        end
-        
-        local localRoot = localPlayer.Character:FindFirstChild("HumanoidRootPart")
-        if not localRoot then 
-            print("No HumanoidRootPart found")
-            return nil 
-        end
-        
-        local nearestPlayer = nil
-        local nearestDistance = AimbotSettings.Range
-        
-        for _, player in pairs(Players:GetPlayers()) do
+
+        local character = localPlayer.Character
+        if not character then return nil end
+
+        local root = character:FindFirstChild("HumanoidRootPart")
+        if not root then return nil end
+
+        local nearest = nil
+        local minDist = AimbotSettings.Range
+
+        for _, player in ipairs(Players:GetPlayers()) do
             if player ~= localPlayer and player.Character then
-                local character = player.Character
-                local humanoid = character:FindFirstChild("Humanoid")
-                local rootPart = character:FindFirstChild("HumanoidRootPart")
-                local head = character:FindFirstChild("Head")
-                
-                if humanoid and humanoid.Health > 0 and rootPart and head then
-                    local distance = getDistance(localRoot.Position, rootPart.Position)
-                    
-                    if distance <= nearestDistance then
-                        nearestDistance = distance
-                        nearestPlayer = player
-                        print("Found target: " .. player.Name .. " Distance: " .. math.floor(distance))
+                local enemyChar = player.Character
+                local enemyRoot = enemyChar:FindFirstChild("HumanoidRootPart")
+                local enemyHumanoid = enemyChar:FindFirstChild("Humanoid")
+                local enemyHead = enemyChar:FindFirstChild("Head")
+
+                if enemyHumanoid and enemyHumanoid.Health > 0 and enemyRoot and enemyHead then
+                    local dist = getDistance(root.Position, enemyRoot.Position)
+                    if dist <= minDist then
+                        minDist = dist
+                        nearest = player
                     end
                 end
             end
         end
-        
-        return nearestPlayer
+
+        return nearest
     end
 
-    -- ฟังก์ชันยิงไปที่หัวเป้าหมาย
-    local function shootAtTarget(targetPlayer)
-        local Players = game:GetService("Players")
-        local localPlayer = Players.LocalPlayer
-        
-        if not targetPlayer or not targetPlayer.Character then 
-            print("No target player found")
-            return false 
-        end
-        
-        local head = targetPlayer.Character:FindFirstChild("Head")
-        if not head then 
-            print("No head found on target")
-            return false 
-        end
-        
-        local character = localPlayer.Character
-        if not character then 
-            print("No local character")
-            return false 
-        end
-        
-        local glock = character:FindFirstChild("Glock")
-        if not glock then 
-            print("No Glock found")
-            return false 
-        end
-        
-        local shootEvent = glock:FindFirstChild("ShootEvent")
-        if not shootEvent then 
-            print("No ShootEvent found")
-            return false 
-        end
-        
-        -- ยิงไปที่หัวเป้าหมาย
-        local args = {
-            Vector3.new(head.Position.X, head.Position.Y, head.Position.Z)
-        }
-        
-        shootEvent:FireServer(unpack(args))
-        print("Shot at: " .. targetPlayer.Name)
-        return true
-    end
-
-    -- ฟังก์ชันล็อคหัวอัตโนมัติ
+    ----------------------------------------------------------------
+    -- ♻️ Aimbot Loop
+    ----------------------------------------------------------------
     local function autoAim()
         local target = findNearestTarget()
         if target then
-            local success = shootAtTarget(target)
-            if success then
-                print("Auto aim successful: " .. target.Name)
-            else
-                print("Auto aim failed")
-            end
-            return target
-        else
-            print("No target found in range")
-            return nil
+            shootAtTarget(target)
         end
     end
 
-    -- Main Aimbot Loop
     local aimbotConnection
     local function startAimbot()
         local RunService = game:GetService("RunService")
-        
+
         if aimbotConnection then
             aimbotConnection:Disconnect()
         end
-        
+
         aimbotConnection = RunService.Heartbeat:Connect(function()
             if AimbotSettings.Enabled then
                 autoAim()
@@ -2216,34 +2316,31 @@ local Aimbot = Window:Tab({Title = "ล็อคเป้า", Icon = "user"}) d
         end)
     end
 
-    -- เริ่ม Aimbot Loop
+    -- 🔁 เริ่มใช้งาน Aimbot
     startAimbot()
-    
-    -- Auto reconnect when character respawns
+
+    -- 🪖 Respawn Support
     local Players = game:GetService("Players")
     local localPlayer = Players.LocalPlayer
-    
-    localPlayer.CharacterAdded:Connect(function(character)
-        print("Character respawned, reinitializing aimbot...")
-        wait(2) -- รอให้ character โหลดครบ
+    localPlayer.CharacterAdded:Connect(function()
+        print("🔄 Character respawned, restarting Aimbot")
+        task.wait(2)
         startAimbot()
     end)
 
-    -- Safety features - Emergency disable
+    -- 🆘 Emergency stop with Backspace
     local UserInputService = game:GetService("UserInputService")
-    UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if gameProcessed then return end
-
-        -- Emergency disable with Backspace key
+    UserInputService.InputBegan:Connect(function(input, gp)
+        if gp then return end
         if input.KeyCode == Enum.KeyCode.Backspace then
             AimbotSettings.Enabled = false
-            print("EMERGENCY: Aimbot Disabled")
+            print("🚨 Aimbot forcefully disabled")
         end
     end)
 
-    print("Aimbot System Loaded Successfully!")
-    print("Use the toggle to enable/disable aimbot")
+    print("✅ Aimbot System Loaded – Ready to use!")
 end
+
 Window:Line()
 
 
